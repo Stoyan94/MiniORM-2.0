@@ -244,6 +244,125 @@ namespace MiniORM
             throw new ArgumentException(String.Format(NoTableNameFound, this.dbSetProperties[tableType].Name));
         }
 
-        // push
+        private void MapRelations<TEntity>(DbSet<TEntity> dbSet)
+            where TEntity : class, new()
+        {
+            Type entityType = typeof(TEntity);
+
+            this.MapNavigationProperties(dbSet);
+
+            IEnumerable<PropertyInfo> entityCollections = entityType
+                .GetProperties()
+                .Where(pi => pi.PropertyType.IsGenericType &&
+                             pi.PropertyType.GetGenericTypeDefinition() == typeof(ICollection<>));
+
+            foreach (PropertyInfo entityCollectionPropInfo in entityCollections)
+            {
+                Type collectionEntityType = entityCollectionPropInfo
+                    .PropertyType
+                    .GenericTypeArguments
+                    .First();
+
+                MethodInfo mapCollectionGenMethodInfo = typeof(DbContext)
+                    .GetMethod("MapCollection", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .MakeGenericMethod(entityType, collectionEntityType);
+
+                mapCollectionGenMethodInfo.Invoke(this, new object[] { dbSet, entityCollectionPropInfo });
+            }
+        }
+
+
+        private void MapNavigationProperties<TEntiy>(DbSet<TEntiy> dbSet)
+            where TEntiy : class, new()
+        {
+            Type entityType = typeof(TEntiy);
+
+            IEnumerable<PropertyInfo> foreignKeys = entityType
+                .GetProperties()
+                .Where(pi => pi.HasAttribute<ForeignKeyAttribute>());
+
+            foreach (PropertyInfo fkPropertyInfo in foreignKeys)
+            {
+                string navigationPropName = fkPropertyInfo
+                    .GetCustomAttribute<ForeignKeyAttribute>()!.Name;
+
+                PropertyInfo? navigationPropertyInfo = entityType
+                    .GetProperty(navigationPropName);
+
+                if (navigationPropertyInfo == null)
+                {
+                    throw new ArgumentException(String.Format(InvalidNavigationPropertyName,
+                        fkPropertyInfo.Name, navigationPropName));
+                }
+
+                object? navDbSetInstance = 
+                    this.dbSetProperties[navigationPropertyInfo.PropertyType].GetValue(this);
+
+                if (navDbSetInstance == null)
+                {
+                    throw new ArgumentException(String.Format(NavPropertyWithoutDbSetMessage,
+                        navigationPropName, navigationPropertyInfo.PropertyType));
+                }
+
+                PropertyInfo navEntityPkPropInfo = navigationPropertyInfo
+                 .PropertyType
+                 .GetProperties()
+                 .First(pi => pi.HasAttribute<KeyAttribute>());
+                foreach (TEntiy entity in dbSet)
+                {
+                    object? fkValue = fkPropertyInfo.GetValue(entity);
+                    if (fkValue == null)
+                    {
+                        navigationPropertyInfo.SetValue(entity, null);
+                        continue;
+                    }
+
+                    object? navPropValueEntity = ((IEnumerable<object>)navDbSetInstance)
+                        .First(currNavPropEntity => navEntityPkPropInfo
+                            .GetValue(currNavPropEntity)!
+                            .Equals(fkValue));
+                    navigationPropertyInfo.SetValue(entity, navPropValueEntity);
+                }
+
+            }
+        }
+
+
+        private void MapCollection<TDbSet, TCollection>(DbSet<TDbSet> dbSet, PropertyInfo collectionPropInfo)
+           where TDbSet : class, new()
+           where TCollection : class, new()
+        {
+            Type entityType = typeof(TDbSet);
+            Type collectionType = typeof(TCollection);
+
+            IEnumerable<PropertyInfo> collectionPrimaryKeys = collectionType
+                .GetProperties()
+                .Where(pi => pi.HasAttribute<KeyAttribute>());
+
+            PropertyInfo foreignKey = collectionType
+                .GetProperties()
+                .First(pi => pi.HasAttribute<ForeignKeyAttribute>() &&
+                                        collectionType
+                                             .GetProperty(pi.GetCustomAttribute<ForeignKeyAttribute>()!.Name)!
+                                             .PropertyType == entityType);
+            PropertyInfo primaryKey = entityType
+                .GetProperties()
+                .First(pi => pi.HasAttribute<KeyAttribute>());
+
+
+            DbSet<TCollection> navDbSet = (DbSet<TCollection>)
+                this.dbSetProperties[collectionType]
+                    .GetValue(this)!;
+            foreach (TDbSet dbSetEntity in dbSet)
+            {
+                object pkValue = primaryKey.GetValue(dbSetEntity)!;
+                IEnumerable<TCollection> navCollectionEntities = navDbSet
+                    .Where(navEntity => foreignKey.GetValue(navEntity) != null &&
+                                                  foreignKey.GetValue(navEntity)!.Equals(pkValue))
+                    .ToArray();
+                ReflectionHelper.ReplaceBackingField(dbSetEntity, collectionPropInfo.Name, navCollectionEntities);
+            }
+        }
+
     }
 }
