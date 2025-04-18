@@ -1,6 +1,7 @@
 ﻿using Microsoft.Data.SqlClient;
 using System.Collections;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Reflection;
 using static MiniORM.ErrorMessages;
 
@@ -208,5 +209,39 @@ namespace MiniORM
                 .FetchResultSet<TEntity>(tableName, columnNames.ToArray());
         }
 
+        
+        private IEnumerable<string> GetEntityColumnNames(Type entityType)
+        {
+            string tableName = this.GetTableName(entityType);
+            IEnumerable<string> tableColumnNames = this.dbConnection
+                .FetchColumnNames(tableName);
+
+            IEnumerable<string> entityColumnNames = entityType
+                .GetProperties()
+                .Where(pi => tableColumnNames.Contains(pi.Name) &&
+                             !pi.HasAttribute<NotMappedAttribute>() &&
+                             AllowedSqlTypes.Contains(pi.PropertyType))
+                .Select(pi => pi.Name)
+                .ToArray();
+
+            return entityColumnNames;
+        }
+
+        private string GetTableName(Type tableType)
+        {
+            Attribute? tableNameAtr = Attribute.GetCustomAttribute(tableType, typeof(TableAttribute));
+
+            if (tableNameAtr == null)
+            {
+                return this.dbSetProperties[tableType].Name;
+            }
+
+            if (tableNameAtr is TableAttribute tableNameAttrConf)
+            {
+                return tableNameAttrConf.Name;
+            }
+
+            throw new ArgumentException(String.Format(NoTableNameFound, this.dbSetProperties[tableType].Name));
+        }
     }
 }
