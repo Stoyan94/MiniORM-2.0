@@ -52,3 +52,4 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+/.vs/MiniORM/FileContentIndex/4b9735c4-3b25-4cfb-b1a3-30c6dc253d96.vsidx
