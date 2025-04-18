@@ -1,1 +1,13 @@
+dbset methods implementation
 
+Creating DbContext logic
+
+initialize method Save Changes in DbContext
+
+Add helper methods Persist<T>() and IsObjectValid() used in SaveChanges()
+
+feat: add reflection-based DbSet discovery, initialization and relation mapping
+- Implemented DiscoverDbSet to detect all DbSet<T> properties
+- Added InitializeDbSets to populate each DbSet from the database
+- Added MapAllRelations to handle entity relations using reflection
+- Introduced PopulateDbSet and LoadTableEntities for dynamic entity loading
